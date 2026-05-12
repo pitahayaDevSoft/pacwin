@@ -111,7 +111,8 @@ function _pw_sep
 function _pw_exe
 {
     param([string]$name)
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    # Use -CommandType to bypass functions/aliases (like sfsu hook)
+    $cmd = Get-Command $name -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($cmd)
     { return $cmd.Source
     }
