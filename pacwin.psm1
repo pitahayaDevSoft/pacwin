@@ -2,7 +2,7 @@
 #  pacwin.psm1  -  Universal Package Layer for Windows
 #  Abstraction over: winget | chocolatey | scoop
 #  Compatible: PowerShell 5.1 + PowerShell 7+
-#  v0.3.0 (Major Refactor & Optimizations)
+#  v0.3.1 (Major Refactor & Optimizations)
 # ============================================================
 
 Set-StrictMode -Version 2.0
@@ -66,7 +66,7 @@ function _pw_header
     _pw_color ""
     _pw_color "  >> " Cyan -NoNewline
     _pw_color "pacwin" White -NoNewline
-    _pw_color " v0.3.0" DarkGray -NoNewline
+    _pw_color " v0.3.1" DarkGray -NoNewline
     _pw_color "  --  " DarkGray -NoNewline
     _pw_color "universal package layer" DarkGray
 
@@ -915,7 +915,7 @@ function pacwin
 
         "^(version|-V|--version)$"
         {
-            _pw_color "  pacwin v0.3.0" Cyan
+            _pw_color "  pacwin v0.3.1" Cyan
             _pw_color "  PowerShell $($PSVersionTable.PSVersion)" Gray
             return
         }
@@ -933,7 +933,7 @@ function pacwin
         "^(version|--version|-v)$"
         {
             _pw_color "  pacwin" White -NoNewline
-            _pw_color " v0.3.0" Gray
+            _pw_color " v0.3.1" Gray
         }
 
         Default

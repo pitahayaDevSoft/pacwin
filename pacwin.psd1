@@ -13,7 +13,7 @@ RootModule = 'pacwin.psm1'
 
 
 # Version number of this module.
-ModuleVersion = '0.3.0'
+ModuleVersion = '0.3.1'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -108,7 +108,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = 'v0.3.0: Major parser refactor, performance optimizations, and expanded test coverage for security and robustness.'
+        ReleaseNotes = 'v0.3.1: Fixed Scoop detection interference caused by sfsu hook and other alias wrappers.'
 
         # Prerelease string of this module
         # Prerelease = ''

@@ -337,7 +337,7 @@ Use it, fork it, ship it. Just don't blame us if you start missing `pacman` even
 
 ### Metadata
 
-- **Status**: Stable (v0.3.0)
+- **Status**: Stable (v0.3.1)
 - **Requirements**: Windows PowerShell 5.1 or PS 7.2+
 - **Maintainers**: [julesklord](https://github.com/julesklord)
 - **Known issues**: Scoop searches can timeout if bucket metadata is stale — run `scoop update` to refresh. Same energy as `pacman -Syy`, different tool.
