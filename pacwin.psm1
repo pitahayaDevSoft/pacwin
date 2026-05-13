@@ -1300,15 +1300,10 @@ function _pw_do_import
 
 #region -- Doctor -------------------------------------------
 
-function _pw_do_doctor
+function _pw_doctor_check_admin
 {
     param($managers)
-
-    _pw_color "  Running diagnostics..." Cyan
-    _pw_sep
     $issues = 0
-
-    # Administrator check
     $isAdmin = _pw_is_admin
     _pw_color ("  Privileges   : {0}" -f $(if ($isAdmin)
             { "Administrator"
@@ -1324,8 +1319,12 @@ function _pw_do_doctor
         _pw_color "  [!] Warning: Chocolatey (choco) usually requires Administrator privileges." Yellow
         $issues++
     }
+    return $issues
+}
 
-    # PowerShell version
+function _pw_doctor_check_psversion
+{
+    $issues = 0
     $psv = $PSVersionTable.PSVersion
     _pw_color ("  PS Version   : {0}" -f $psv) $(if ($psv.Major -ge 5)
         { "Green"
@@ -1335,8 +1334,11 @@ function _pw_do_doctor
     if ($psv.Major -lt 5)
     { _pw_color "  [!] PowerShell 5.1+ required." Red; $issues++
     }
+    return $issues
+}
 
-    # Manager presence & version
+function _pw_doctor_check_managers
+{
     foreach ($mgr in @("winget","choco","scoop"))
     {
         $exe = _pw_exe $mgr
@@ -1365,8 +1367,12 @@ function _pw_do_doctor
             _pw_color ("  {0,-12} : NOT FOUND" -f $mgr) DarkGray
         }
     }
+    return 0
+}
 
-    # Connectivity check
+function _pw_doctor_check_connectivity
+{
+    $issues = 0
     _pw_color ""
     _pw_color "  Connectivity:" DarkGray
     $hosts = @("api.github.com","community.chocolatey.org","github.com")
@@ -1386,8 +1392,13 @@ function _pw_do_doctor
         { $issues++
         }
     }
+    return $issues
+}
 
-    # Scoop buckets stale check
+function _pw_doctor_check_scoop_buckets
+{
+    param($managers)
+    $issues = 0
     if ($managers["scoop"])
     {
         _pw_color ""
@@ -1426,6 +1437,22 @@ function _pw_do_doctor
             }
         }
     }
+    return $issues
+}
+
+function _pw_do_doctor
+{
+    param($managers)
+
+    _pw_color "  Running diagnostics..." Cyan
+    _pw_sep
+    $issues = 0
+
+    $issues += _pw_doctor_check_admin $managers
+    $issues += _pw_doctor_check_psversion
+    $issues += _pw_doctor_check_managers
+    $issues += _pw_doctor_check_connectivity
+    $issues += _pw_doctor_check_scoop_buckets $managers
 
     _pw_sep
     if ($issues -eq 0)
@@ -1440,6 +1467,8 @@ function _pw_do_doctor
 #endregion
 
 #region -- Self-Update ---------------------------------------
+
+
 
 function _pw_self_update
 {
