@@ -197,24 +197,18 @@ function _pw_parse_winget_lines
             { continue
             }
             $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-            if ($parts.Count -ge 2)
-            {
-                $results.Add([PSCustomObject]@{
-                        Name    = $parts[0].Trim()
-                        ID      = $(if ($parts.Count -ge 3)
-                            { $parts[1].Trim()
-                            } else
-                            { $parts[0].Trim()
-                            })
-                        Version = $(if ($parts.Count -ge 3)
-                            { $parts[2].Trim()
-                            } else
-                            { $parts[1].Trim()
-                            })
-                        Source  = "winget"
-                        Manager = "winget"
-                    })
+            if ($parts.Count -lt 2)
+            { continue
             }
+            $id = if ($parts.Count -ge 3) { $parts[1].Trim() } else { $parts[0].Trim() }
+            $version = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $parts[1].Trim() }
+            $results.Add([PSCustomObject]@{
+                    Name    = $parts[0].Trim()
+                    ID      = $id
+                    Version = $version
+                    Source  = "winget"
+                    Manager = "winget"
+                })
         }
         return $results
     }
@@ -372,13 +366,10 @@ function _pw_parse_scoop_lines
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
         if ($parts.Count -ge 1 -and $parts[0] -notmatch "^[Nn]ame$|^Source$")
         {
+            $version = if ($parts.Count -ge 2) { $parts[1] } else { "?" }
             $results.Add([PSCustomObject]@{
                     Name = $parts[0]; ID = $parts[0]
-                    Version = $(if ($parts.Count -ge 2)
-                        { $parts[1]
-                        } else
-                        { "?"
-                        })
+                    Version = $version
                     Source = "scoop"; Manager = "scoop"
                 })
         }
