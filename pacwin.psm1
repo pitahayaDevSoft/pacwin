@@ -197,24 +197,20 @@ function _pw_parse_winget_lines
             { continue
             }
             $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-            if ($parts.Count -ge 2)
-            {
-                $results.Add([PSCustomObject]@{
-                        Name    = $parts[0].Trim()
-                        ID      = $(if ($parts.Count -ge 3)
-                            { $parts[1].Trim()
-                            } else
-                            { $parts[0].Trim()
-                            })
-                        Version = $(if ($parts.Count -ge 3)
-                            { $parts[2].Trim()
-                            } else
-                            { $parts[1].Trim()
-                            })
-                        Source  = "winget"
-                        Manager = "winget"
-                    })
+            if ($parts.Count -lt 2)
+            { continue
             }
+
+            $id = if ($parts.Count -ge 3) { $parts[1].Trim() } else { $parts[0].Trim() }
+            $version = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $parts[1].Trim() }
+
+            $results.Add([PSCustomObject]@{
+                    Name    = $parts[0].Trim()
+                    ID      = $id
+                    Version = $version
+                    Source  = "winget"
+                    Manager = "winget"
+                })
         }
         return $results
     }
@@ -370,18 +366,19 @@ function _pw_parse_scoop_lines
             continue
         }
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-        if ($parts.Count -ge 1 -and $parts[0] -notmatch "^[Nn]ame$|^Source$")
-        {
-            $results.Add([PSCustomObject]@{
-                    Name = $parts[0]; ID = $parts[0]
-                    Version = $(if ($parts.Count -ge 2)
-                        { $parts[1]
-                        } else
-                        { "?"
-                        })
-                    Source = "scoop"; Manager = "scoop"
-                })
+        if ($parts.Count -eq 0 -or $parts[0] -match "^[Nn]ame$|^Source$")
+        { continue
         }
+
+        $version = if ($parts.Count -ge 2) { $parts[1] } else { "?" }
+
+        $results.Add([PSCustomObject]@{
+                Name    = $parts[0]
+                ID      = $parts[0]
+                Version = $version
+                Source  = "scoop"
+                Manager = "scoop"
+            })
     }
     return ,$results
 }
