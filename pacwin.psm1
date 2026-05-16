@@ -211,24 +211,20 @@ function _pw_parse_winget_lines
             { continue
             }
             $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-            if ($parts.Count -ge 2)
-            {
-                $results.Add([PSCustomObject]@{
-                        Name    = $parts[0].Trim()
-                        ID      = $(if ($parts.Count -ge 3)
-                            { $parts[1].Trim()
-                            } else
-                            { $parts[0].Trim()
-                            })
-                        Version = $(if ($parts.Count -ge 3)
-                            { $parts[2].Trim()
-                            } else
-                            { $parts[1].Trim()
-                            })
-                        Source  = "winget"
-                        Manager = "winget"
-                    })
+            if ($parts.Count -lt 2)
+            { continue
             }
+
+            $id = if ($parts.Count -ge 3) { $parts[1].Trim() } else { $parts[0].Trim() }
+            $version = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $parts[1].Trim() }
+
+            $results.Add([PSCustomObject]@{
+                    Name    = $parts[0].Trim()
+                    ID      = $id
+                    Version = $version
+                    Source  = "winget"
+                    Manager = "winget"
+                })
         }
         return $results
     }
@@ -384,18 +380,19 @@ function _pw_parse_scoop_lines
             continue
         }
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-        if ($parts.Count -ge 1 -and $parts[0] -notmatch "^[Nn]ame$|^Source$")
-        {
-            $results.Add([PSCustomObject]@{
-                    Name = $parts[0]; ID = $parts[0]
-                    Version = $(if ($parts.Count -ge 2)
-                        { $parts[1]
-                        } else
-                        { "?"
-                        })
-                    Source = "scoop"; Manager = "scoop"
-                })
+        if ($parts.Count -eq 0 -or $parts[0] -match "^[Nn]ame$|^Source$")
+        { continue
         }
+
+        $version = if ($parts.Count -ge 2) { $parts[1] } else { "?" }
+
+        $results.Add([PSCustomObject]@{
+                Name    = $parts[0]
+                ID      = $parts[0]
+                Version = $version
+                Source  = "scoop"
+                Manager = "scoop"
+            })
     }
     return ,$results
 }
@@ -404,14 +401,10 @@ function _pw_parse_scoop_lines
 
 #region -- Search Engine ------------------------------------
 
-function _pw_search_all
+function _pw_get_search_scripts
 {
-    param($managers, [string]$query, [int]$limit = 40, [int]$timeoutSeconds = 25)
-
-    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+    param($managers)
     $scripts = [ordered]@{}
-    $timeoutMs = $timeoutSeconds * 1000
-    $waitLimit = [int]($timeoutMs / 100)
 
     if ($managers["winget"])
     {
@@ -456,19 +449,12 @@ function _pw_search_all
             }
         }
     }
+    return $scripts
+}
 
-    # Unified concurrency approach for all PS versions
-    # This allows us to control the UI (spinner) while waiting for background tasks
-    $rsPool = [runspacefactory]::CreateRunspacePool(1, $scripts.Count)
-    $rsPool.Open()
-    $tasks = New-Object System.Collections.Generic.List[Object]
-
-    foreach ($key in $scripts.Keys)
-    {
-        $ps = [powershell]::Create().AddScript($scripts[$key]).AddArgument($managers[$key]).AddArgument($query)
-        $ps.RunspacePool = $rsPool
-        $tasks.Add(@{ Key = $key; PowerShell = $ps; AsyncResult = $ps.BeginInvoke(); Finished = $false })
-    }
+function _pw_wait_search_tasks
+{
+    param($tasks, [int]$timeoutSeconds)
 
     $spinner = "|/-\"
     $spinIdx = 0
@@ -515,8 +501,12 @@ function _pw_search_all
         $spinIdx++
     }
     Write-Host "" # End the spinner line
+}
 
-    # Collect and parse results
+function _pw_collect_search_results
+{
+    param($tasks, $results)
+
     foreach ($t in $tasks)
     {
         try
@@ -552,6 +542,34 @@ function _pw_search_all
             $t.PowerShell.Dispose()
         }
     }
+}
+
+function _pw_search_all
+{
+    param($managers, [string]$query, [int]$limit = 40, [int]$timeoutSeconds = 25)
+
+    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    $scripts = _pw_get_search_scripts -managers $managers
+
+    # Unified concurrency approach for all PS versions
+    # This allows us to control the UI (spinner) while waiting for background tasks
+    $rsPool = [runspacefactory]::CreateRunspacePool(1, $scripts.Count)
+    $rsPool.Open()
+    $tasks = New-Object System.Collections.Generic.List[Object]
+
+    foreach ($key in $scripts.Keys)
+    {
+        $ps = [powershell]::Create().AddScript($scripts[$key]).AddArgument($managers[$key]).AddArgument($query)
+        $ps.RunspacePool = $rsPool
+        $tasks.Add(@{ Key = $key; PowerShell = $ps; AsyncResult = $ps.BeginInvoke(); Finished = $false })
+    }
+
+    _pw_wait_search_tasks -tasks $tasks -timeoutSeconds $timeoutSeconds
+
+    # Collect and parse results
+    _pw_collect_search_results -tasks $tasks -results $results
+
     $rsPool.Close()
 
     if ($results.Count -gt $limit)
@@ -1319,15 +1337,10 @@ function _pw_do_import
 
 #region -- Doctor -------------------------------------------
 
-function _pw_do_doctor
+function _pw_doctor_check_admin
 {
     param($managers)
-
-    _pw_color "  Running diagnostics..." Cyan
-    _pw_sep
     $issues = 0
-
-    # Administrator check
     $isAdmin = _pw_is_admin
     _pw_color ("  Privileges   : {0}" -f $(if ($isAdmin)
             { "Administrator"
@@ -1343,8 +1356,12 @@ function _pw_do_doctor
         _pw_color "  [!] Warning: Chocolatey (choco) usually requires Administrator privileges." Yellow
         $issues++
     }
+    return $issues
+}
 
-    # PowerShell version
+function _pw_doctor_check_psversion
+{
+    $issues = 0
     $psv = $PSVersionTable.PSVersion
     _pw_color ("  PS Version   : {0}" -f $psv) $(if ($psv.Major -ge 5)
         { "Green"
@@ -1354,8 +1371,11 @@ function _pw_do_doctor
     if ($psv.Major -lt 5)
     { _pw_color "  [!] PowerShell 5.1+ required." Red; $issues++
     }
+    return $issues
+}
 
-    # Manager presence & version
+function _pw_doctor_check_managers
+{
     foreach ($mgr in @("winget","choco","scoop"))
     {
         $exe = _pw_exe $mgr
@@ -1384,8 +1404,12 @@ function _pw_do_doctor
             _pw_color ("  {0,-12} : NOT FOUND" -f $mgr) DarkGray
         }
     }
+    return 0
+}
 
-    # Connectivity check
+function _pw_doctor_check_connectivity
+{
+    $issues = 0
     _pw_color ""
     _pw_color "  Connectivity:" DarkGray
     $hosts = @("api.github.com","community.chocolatey.org","github.com")
@@ -1405,8 +1429,13 @@ function _pw_do_doctor
         { $issues++
         }
     }
+    return $issues
+}
 
-    # Scoop buckets stale check
+function _pw_doctor_check_scoop_buckets
+{
+    param($managers)
+    $issues = 0
     if ($managers["scoop"])
     {
         _pw_color ""
@@ -1445,6 +1474,22 @@ function _pw_do_doctor
             }
         }
     }
+    return $issues
+}
+
+function _pw_do_doctor
+{
+    param($managers)
+
+    _pw_color "  Running diagnostics..." Cyan
+    _pw_sep
+    $issues = 0
+
+    $issues += _pw_doctor_check_admin $managers
+    $issues += _pw_doctor_check_psversion
+    $issues += _pw_doctor_check_managers
+    $issues += _pw_doctor_check_connectivity
+    $issues += _pw_doctor_check_scoop_buckets $managers
 
     _pw_sep
     if ($issues -eq 0)
@@ -1459,6 +1504,8 @@ function _pw_do_doctor
 #endregion
 
 #region -- Self-Update ---------------------------------------
+
+
 
 function _pw_self_update
 {
