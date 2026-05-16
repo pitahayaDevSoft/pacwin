@@ -73,12 +73,12 @@ function _pw_header
     param($managers)
 
     _pw_color ""
-    _pw_color "  ██████╗  █████╗  ██████╗██╗    ██╗██╗███╗   ██╗" Red
-    _pw_color "  ██╔══██╗██╔══██╗██╔════╝██║    ██║██║████╗  ██║" Red
-    _pw_color "  ██████╔╝███████║██║     ██║ █╗ ██║██║██╔██╗ ██║" Red
-    _pw_color "  ██╔═══╝ ██╔══██║██║     ██║███╗██║██║██║╚██╗██║" Red
-    _pw_color "  ██║     ██║  ██║╚██████╗╚███╔███╔╝██║██║ ╚████║" Red
-    _pw_color "  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝" Red
+    _pw_color "      .---.      " Red -NoNewline; _pw_color "██████╗  █████╗  ██████╗██╗    ██╗██╗███╗   ██╗" Gray
+    _pw_color "     /     \     " Red -NoNewline; _pw_color "██╔══██╗██╔══██╗██╔════╝██║    ██║██║████╗  ██║" Gray
+    _pw_color "    |  ■  ■ |    " Red -NoNewline; _pw_color "██████╔╝███████║██║     ██║ █╗ ██║██║██╔██╗ ██║" Gray
+    _pw_color "    |       |    " Red -NoNewline; _pw_color "██╔═══╝ ██╔══██║██║     ██║███╗██║██║██║╚██╗██║" Gray
+    _pw_color "    'vvvvvvv'    " Red -NoNewline; _pw_color "██║     ██║  ██║╚██████╗╚███╔███╔╝██║██║ ╚████║" Gray
+    _pw_color "    '       '    " Red -NoNewline; _pw_color "╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝" Gray
     _pw_color ""
     _pw_color "  [ pacwin.ps1 ] // Powered by: Tropical // BUILD: STABLE" DarkGray
     _pw_color ""
@@ -152,6 +152,8 @@ function _pw_detect_managers
     $wingetExe = _pw_exe "winget"
     $chocoExe = _pw_exe "choco"
     $scoopExe = _pw_exe "scoop"
+    $sfsuExe = _pw_exe "sfsu"
+
     if ($wingetExe)
     { $m["winget"] = $wingetExe
     }
@@ -160,6 +162,9 @@ function _pw_detect_managers
     }
     if ($scoopExe)
     { $m["scoop"] = $scoopExe
+    }
+    if ($sfsuExe)
+    { $m["sfsu"] = $sfsuExe
     }
     return $m
 }
@@ -367,13 +372,29 @@ function _pw_parse_scoop_lines
     $inResults = $false
     foreach ($line in $lines)
     {
-        if ($line -match "^Results from")
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+        # Detect start of results (header or Scoop's "Results from" line)
+        if ($line -match "^Results from" -or $line -match "^\s*Name\s+Version\s+Source")
         { $inResults = $true; continue
         }
+
+        # If we get a line that looks like a PSCustomObject string representation, try to handle it
+        if ($line -match "^@{Name=([^;]+); Version=([^;]+); Source=([^;]+)")
+        {
+            $results.Add([PSCustomObject]@{
+                    Name = $Matches[1].Trim(); ID = $Matches[1].Trim()
+                    Version = $Matches[2].Trim(); Source = "scoop"; Manager = "scoop"
+                })
+            $inResults = $true
+            continue
+        }
+
         if (-not $inResults -or $line -match "^\s*$|^-{3,}")
         { continue
         }
 
+        # Handle 'name (version) [source]' format
         if ($line -match "^\s+(\S+)\s+\(([^)]+)\)")
         {
             $results.Add([PSCustomObject]@{
@@ -382,6 +403,8 @@ function _pw_parse_scoop_lines
                 })
             continue
         }
+
+        # Handle columnar format: Name  Version  Source
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
         if ($parts.Count -eq 0 -or $parts[0] -match "^[Nn]ame$|^Source$")
         { continue
@@ -444,6 +467,13 @@ function _pw_get_search_scripts
             param($exe, $q)
             try
             {
+                # Check if sfsu is available for ultra-fast scoop search
+                $sfsu = Get-Command sfsu -ErrorAction SilentlyContinue
+                if ($sfsu)
+                {
+                    $out = & $sfsu.Source search $q 2>&1
+                    return $out
+                }
                 $out = & $exe search $q 2>&1
                 return $out
             } catch
@@ -517,7 +547,10 @@ function _pw_collect_search_results
             if ($t.AsyncResult.IsCompleted)
             {
                 $raw = $t.PowerShell.EndInvoke($t.AsyncResult)
-                $lines = [System.Collections.Generic.List[string]]::new($raw.Count); foreach ($r in $raw)
+                if ($null -eq $raw) { continue }
+
+                $lines = [System.Collections.Generic.List[string]]::new($raw.Count)
+                foreach ($r in $raw)
                 { $lines.Add([string]$r)
                 }
                 $parsed = @()
@@ -549,7 +582,7 @@ function _pw_collect_search_results
 
 function _pw_search_all
 {
-    param($managers, [string]$query, [int]$limit = 40, [int]$timeoutSeconds = 25)
+    param($managers, [string]$query, [int]$limit = 40, [int]$timeoutSeconds = 35)
 
     $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -1379,7 +1412,7 @@ function _pw_doctor_check_psversion
 
 function _pw_doctor_check_managers
 {
-    foreach ($mgr in @("winget","choco","scoop"))
+    foreach ($mgr in @("winget","choco","scoop","sfsu"))
     {
         $exe = _pw_exe $mgr
         if ($exe)
@@ -1396,6 +1429,9 @@ function _pw_doctor_check_managers
                     }
                     "scoop"
                     { (scoop --version 2>$null) | Select-Object -First 1
+                    }
+                    "sfsu"
+                    { (sfsu --version 2>$null) | Select-Object -First 1
                     }
                 }
             } catch
