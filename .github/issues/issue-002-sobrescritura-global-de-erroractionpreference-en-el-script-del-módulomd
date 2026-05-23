@@ -1,0 +1,31 @@
+# ISSUE-002 // Sobrescritura global de $ErrorActionPreference en el script del módulo
+
+**Type**: Mejora/Refactor
+**Severity**: Baja
+**Component**: Configuración Global
+
+---
+
+## 1. Descripción del Problema
+Asignar '$ErrorActionPreference = "Continue"' a nivel global dentro de un script de módulo (.psm1) altera el comportamiento de la sesión interactiva completa del usuario que importa el módulo. Esto es una mala práctica en PowerShell, ya que interfiere con los scripts y suites de prueba (como Pester) del desarrollador, enmascarando o silenciando errores que deberían detener ejecuciones en sus pipelines locales.
+
+## 2. Ubicación del Código
+- **Archivo**: [pacwin.psm1](file:///K:/source/repos/pacwin/pacwin.psm1)
+- **Línea(s)**: 9
+
+## 3. Comportamiento Esperado vs. Comportamiento Actual
+- **Actual**: Asignar '$ErrorActionPreference = "Continue"' a nivel global dentro de un script de módulo (.psm1) altera el comportamiento de la sesión interactiva completa del usuario que importa el módulo. Esto es una mala práctica en PowerShell, ya que interfiere con los scripts y suites de prueba (como Pester) del desarrollador, enmascarando o silenciando errores que deberían detener ejecuciones en sus pipelines locales.
+- **Esperado**: No modificar variables de preferencia globales directamente en el cuerpo del módulo, o en su defecto acotarlas estrictamente utilizando el scope local.
+
+## 4. Pasos para Reproducir / Escenario Crítico
+1. Importar el módulo 'pacwin'.
+2. Ejecutar un comando externo en la misma terminal donde ocurra un error no mortal.
+3. Observar cómo el comportamiento global de las excepciones ha sido forzado a 'Continue' en lugar de respetar las preferencias originales del usuario.
+
+## 5. Propuesta de Solución
+Eliminar la línea global del script:
+```powershell
+# Eliminar:
+# $ErrorActionPreference = "Continue"
+```
+Y manejar los errores de manera explícita en cada Cmdlet utilizando la bandera `-ErrorAction` o bloques locales `try/catch`.

@@ -1,0 +1,34 @@
+# ISSUE-001 // Riesgo de excepción no controlada en _pw_do_sync por $raw.Count
+
+**Type**: Bug
+**Severity**: Alta
+**Component**: Core/Sync
+
+---
+
+## 1. Descripción del Problema
+En la función '_pw_do_sync', al escanear los paquetes instalados de winget, el script ejecuta 'winget list' y de inmediato invoca '[System.Collections.Generic.List[string]]::new($raw.Count)'. Si winget no está instalado, devuelve vacío o falla, '$raw' es '$null'. Intentar acceder a '$raw.Count' sobre un objeto nulo causa una excepción de tipo 'MethodInvocationException' (o lanza un ArgumentNullException en la sobrecarga del constructor), deteniendo completamente la ejecución de la sincronización de bases de datos.
+
+## 2. Ubicación del Código
+- **Archivo**: [pacwin.psm1](file:///K:/source/repos/pacwin/pacwin.psm1)
+- **Línea(s)**: 1701-1703
+
+## 3. Comportamiento Esperado vs. Comportamiento Actual
+- **Actual**: En la función '_pw_do_sync', al escanear los paquetes instalados de winget, el script ejecuta 'winget list' y de inmediato invoca '[System.Collections.Generic.List[string]]::new($raw.Count)'. Si winget no está instalado, devuelve vacío o falla, '$raw' es '$null'. Intentar acceder a '$raw.Count' sobre un objeto nulo causa una excepción de tipo 'MethodInvocationException' (o lanza un ArgumentNullException en la sobrecarga del constructor), deteniendo completamente la ejecución de la sincronización de bases de datos.
+- **Esperado**: El script debe validar si '$raw' contiene elementos o si es nulo antes de instanciar la lista genérica de PowerShell o pasar su propiedad 'Count'.
+
+## 4. Pasos para Reproducir / Escenario Crítico
+1. Desinstalar temporalmente winget o provocar un error simulado en su ejecución.
+2. Ejecutar el comando 'pacwin sync' o llamar internamente a '_pw_do_sync'.
+3. Observar la excepción cruda de PowerShell que detiene el flujo.
+
+## 5. Propuesta de Solución
+Validar si `$raw` es nulo o tiene elementos antes de pasar su dimensión al constructor:
+```powershell
+$raw = winget list --accept-source-agreements 2>$null
+$count = if ($raw) { $raw.Count } else { 0 }
+$lines = [System.Collections.Generic.List[string]]::new($count)
+if ($raw) {
+    foreach ($r in $raw) { $lines.Add([string]$r) }
+}
+```
