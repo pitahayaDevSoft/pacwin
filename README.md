@@ -5,8 +5,8 @@
     </td>
     <td valign="top">
       <h1>pacwin</h1>
-      <p><strong>One single command to install anything in windows.</strong><br/>
-      <em>Unified, pacman-inspired package management layer for Windows (winget, chocolatey, scoop).</em></p>
+      <p><strong>Package management layer for Windows</strong><br/>
+      <em>Unified, pacman-inspired interface for winget, chocolatey, and scoop.</em></p>
       <p>
         <a href="https://www.powershellgallery.com/packages/pacwin"><img src="https://img.shields.io/powershellgallery/v/pacwin.svg?color=blue&label=PowerShell%20Gallery" alt="PowerShell Gallery"></a>
         <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=plastic" alt="License MIT"></a>
@@ -26,65 +26,58 @@
 ---
 
 <!--toc:start-->
-- [pacwin](#pacwin)
-  - [Overview](#overview)
-  - [Using as a CLI Tool](#using-as-a-cli-tool)
-  - [Installation](#installation)
-  - [Key Features (v0.4.2)](#key-features)
-  - [Technical Architecture](#technical-architecture)
-  - [Core Lifecycle](#core-lifecycle)
-  - [Command Reference](#command-reference)
-  - [Roadmap & Milestones](#roadmap--milestones)
-  - [Acknowledgments](#acknowledgments)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Overview](#overview)
+- [Usage](#usage)
+- [Installation](#installation)
+- [Features](#features)
+- [Technical Architecture](#technical-architecture)
+- [Core Lifecycle](#core-lifecycle)
+- [Command Reference](#command-reference)
+- [Roadmap](#roadmap)
+- [Acknowledgments](#acknowledgments)
+- [Contributing](#contributing)
+- [License](#license)
 <!--toc:end-->
 
 ## Overview
 
-**pacwin** unifies **winget**, **chocolatey**, and **scoop** behind a single, `pacman`-inspired interface for Windows. If you've ever typed `pacman -Syu` out of pure muscle memory on a PowerShell prompt—and felt the void when it didn't work—this tool was written for you.
+**pacwin** unifies **winget**, **chocolatey**, and **scoop** through a consistent syntax. It provides a CLI to interact with multiple package managers concurrently using PowerShell.
 
-For command-line users, this project provides a powerful CLI interface to interact with multiple package managers concurrently.
-
-At its heart lies **`pacwin.psm1`**, a high-performance orchestration layer. Built upon **PowerShell 5.1** and **PowerShell 7+**, it exposes a consistent syntax across otherwise fragmented tools.
-
-For end-users, pacwin ships with a **unified search engine**, cross-manager updates, and intelligent error interpretation.
+The core module, `pacwin.psm1`, manages orchestration and interpretive error handling across fragmented tools.
 
 ---
 
-## Using as a CLI Tool
+## Usage
 
-The CLI provides a straightforward interface to interact with your package managers using either verbose or `pacman`-style shorthand.
+The CLI supports standard package management operations using either descriptive flags or shorthand.
 
 <p align="center">
   <img src="docs/demo.gif" alt="pacwin in action" width="700" />
 </p>
 
-Unlike standard wrappers, **pacwin is designed for speed**. If you are building a dev environment or orchestrating systems, you can drop `pacwin` directly into your workflow.
-
 ```powershell
-pacwin -Ss vim        # Search across all managers
-pacwin -S neovim      # Install from the best available source
-pacwin -Syu           # Update everything
+pacwin -Ss vim        # Search all managers
+pacwin -S neovim      # Install package
+pacwin -Syu           # Update all packages
 ```
 
-**Why use `pacwin`?**
-* **Zero Cognitive Load:** Use the syntax you already know from Linux.
-* **Hybrid Concurrency:** Uses threads (Runspaces) instead of heavy processes for 3x faster searches.
-* **Decoded Status:** Real-time decoding of cryptic Windows exit codes.
-* **Smart Filtering:** Easily force specific managers with the `-Manager` flag.
+**Key Capabilities:**
+* **Consistent Syntax:** Maps Linux-style commands to Windows package managers.
+* **Concurrency:** Uses PowerShell Runspaces for asynchronous searches and operations.
+* **Error Interpretation:** Decodes Windows exit codes in real-time.
+* **Filtering:** Supports specific manager selection via the `-Manager` flag.
 
 ---
 
 ## Installation
 
-### Via PowerShell Gallery (Recommended)
+### PowerShell Gallery
 
 ```powershell
 Install-Module -Name pacwin -Scope CurrentUser
 ```
 
-### Via curl (One-Liner)
+### Scripted Installation
 
 ```powershell
 curl -sSL https://raw.githubusercontent.com/julesklord/pacwin/main/get-pacwin.ps1 | powershell -Command -
@@ -100,21 +93,21 @@ cd pacwin
 
 ---
 
-## Key Features (v0.4.2)
+## Features (v0.4.2)
 
-*   **Multi-Manager Search**: Concurrent scanning of Winget, Chocolatey, and Scoop.
-*   **sfsu Rust Integration**: Blazing fast searches, listings, and outdated checks leveraging `sfsu` when available, with clean scoop fallback.
-*   **Locale Independence & Robust Parsers**: Universal tabular parsers that handle any Windows language configuration and dynamic columnar alignment.
-*   **Intelligent Selection**: Yaourt-style interactive prompts for numbered package selection.
-*   **Security Hardened**: Strict input sanitization and path validation to prevent shell injection.
-*   **Legacy Compatibility**: Engineered to work flawlessly on Windows PowerShell 5.1 and modern PowerShell 7+.
-*   **Diagnostic Doctor**: Health check tool to verify manager status, version telemetry, and PATH configuration.
+*   **Multi-Manager Search**: Scans Winget, Chocolatey, and Scoop concurrently.
+*   **sfsu Integration**: Uses `sfsu` for Scoop operations when available.
+*   **Robust Parsers**: Processes tabular output independent of system locale.
+*   **Interactive Selection**: Provides numbered prompts for package selection.
+*   **Security**: Validates input and paths to prevent shell injection.
+*   **Compatibility**: Supports Windows PowerShell 5.1 and PowerShell 7+.
+*   **Diagnostics**: Verifies manager status and PATH configuration.
 
 ---
 
 ## Technical Architecture
 
-pacwin operates as a high-level abstraction layer that standardizes input and normalizes output from external CLIs.
+pacwin standardizes input and normalizes output from external package managers.
 
 ```mermaid
 graph TD
@@ -143,15 +136,13 @@ graph TD
 
 ### Core Components
 
-- **`pacwin.psm1`**: The main script module containing the dispatch logic and search engine.
-- **`_pw_search_all`**: The concurrency fan-out core using RunspacePool or Parallel pipelines.
-- **`_pw_parse_*`**: Dedicated parsers for each manager's unique output format.
+- **`pacwin.psm1`**: Main script module for dispatch logic and search engine management.
+- **`_pw_search_all`**: Concurrency core using RunspacePool.
+- **`_pw_parse_*`**: Format-specific parsers for each package manager.
 
 ---
 
 ## Core Lifecycle
-
-The application follows this workflow from user interaction to package operation.
 
 ```mermaid
 stateDiagram-v2
@@ -174,37 +165,37 @@ stateDiagram-v2
     ExternalCLI --> [*] : Success / Failure
 ```
 
-### Key Engineering Decisions
+### Engineering Decisions
 
-- **Single file:** No compilation or dependencies for maximum portability.
-- **Same-process concurrency:** Thread-based async execution to avoid process overhead.
-- **Normalized model:** All parsers emit a standard PSCustomObject for reliable piping.
+- **Portability:** Single-file distribution without external dependencies.
+- **Efficiency:** Thread-based concurrency within the existing process.
+- **Data Model:** Emits standard `PSCustomObject` instances for pipeline integration.
 
 ---
 
 ## Command Reference
 
-For a comprehensive breakdown, see the **[Wiki](docs/wiki/index.md)**.  
+View the **[Wiki](docs/wiki/index.md)** for details.  
 
 *   **[Installation Guide](docs/wiki/Installation.md)**
 *   **[CLI Command Reference](docs/wiki/Command_Reference.md)**
 *   **[Technical Architecture](docs/wiki/architecture.md)**
 
-| Full Command | Short Alias | Description |
+| Command | Alias | Description |
 | :--- | :--- | :--- |
-| `pacwin search` | `-Ss` | Search across all managers. |
-| `pacwin install` | `-S` | Install a package from source. |
-| `pacwin update` | `-Syu` | Update all installed packages. |
-| `pacwin list` | `-Q` | View all installed packages. |
+| `pacwin search` | `-Ss` | Search across managers. |
+| `pacwin install` | `-S` | Install a package. |
+| `pacwin update` | `-Syu` | Update installed packages. |
+| `pacwin list` | `-Q` | View installed packages. |
 | `pacwin doctor` | `check` | Verify system health. |
 
 ---
 
-## Roadmap & Milestones
+## Roadmap
 
 | Version | Status | Milestone |
 | --- | --- | --- |
-| **v0.1.0** | ✅ | First hybrid search engine release. |
+| **v0.1.0** | ✅ | First hybrid search engine. |
 | **v0.2.0** | ✅ | Export/Import and Tab Completion. |
 | **v0.3.0** | ✅ | Major performance refactor & test coverage. |
 | **v0.4.0** | ✅ | Brand redesign (Pitahaya style) & ASCII banner. |
@@ -215,16 +206,13 @@ For a comprehensive breakdown, see the **[Wiki](docs/wiki/index.md)**.
 
 ## Acknowledgments
 
-- **[Arch Linux Pacman](https://archlinux.org/pacman/)** — For the superior syntax that inspired this project.
-- **[Scoop](https://scoop.sh/)** — For making Windows package management actually usable.
+- **Arch Linux Pacman**: Inspiring the command syntax.
+- **Scoop**: Providing Windows package management capabilities.
 
 ## Contributing
 
-Pull requests are welcome. For major changes, open an RFC issue first. See `CONTRIBUTING.md` for guidelines.
+Submit pull requests for changes. Open an RFC issue first for major updates. See `CONTRIBUTING.md`.
 
 ## License
 
-<p align="center">
-  Engineered by <a href="https://github.com/julesklord">julesklord</a>.<br>
-  Released under the terms of the MIT License.
-</p>
+MIT License.
