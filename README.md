@@ -5,7 +5,7 @@
     </td>
     <td valign="top">
       <h1>pacwin</h1>
-      <p><strong>One CLI. Three managers. Zero excuses.</strong><br/>
+      <p><strong>One single command to install anything in windows.</strong><br/>
       <em>Unified, pacman-inspired package management layer for Windows (winget, chocolatey, scoop).</em></p>
       <p>
         <a href="https://www.powershellgallery.com/packages/pacwin"><img src="https://img.shields.io/powershellgallery/v/pacwin.svg?color=blue&label=PowerShell%20Gallery" alt="PowerShell Gallery"></a>
