@@ -1,9 +1,0 @@
-{
-  "agents": {
-    "overrides": {
-      "generalist": {
-        "enabled": false
-      }
-    }
-  }
-}
