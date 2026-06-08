@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-08
+### Added
+- **Command Pattern Architecture**: Modularized the monolithic `pacwin` dispatcher, moving all commands into independent files under `internal/commands/` for easier testing and maintenance.
+- **Centralized Helpers**: Extracted concurrent `RunspacePool` operations to `internal/helpers/Concurrency.ps1` and unified color and exit-code handling in `internal/helpers/ErrorHandler.ps1`.
+- **Precompiled Regex Parsers**: Highly optimized parser hot paths (`winget`, `choco`, `scoop`) using script-level precompiled regexes to improve execution speed and eliminate global `$Matches` overhead.
+- **Robust Integration Testing**: Implemented 48/48 fully green integration tests covering edge cases (truncated outputs, scoop bucket permission errors, unicode names, timeout handling, and export/import roundtrips).
+- **PowerShell 5.1 StrictMode Compatibility**: Resolved compatibility bugs on Windows PowerShell 5.1 regarding character multiplication operator limits (`[System.Char] * [System.Int32]`) and uninitialized `$LASTEXITCODE` variables.
+
 ## [0.4.2] - 2026-05-22
 ### Changed
 - **Parser Conditionals Refactoring**: Streamlined and flattened deeply nested conditional statements inside `_pw_parse_winget_lines` and `_pw_parse_scoop_lines` in `pacwin.psm1`. Extracted local variables to eliminate inline sub-expression nesting (`$(if ...)`), improving long-term readability and maintainability.

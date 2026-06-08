@@ -274,4 +274,99 @@ Describe "pacwin core logic" {
             }
         }
     }
+
+    Context "Integration Scenarios" {
+        It "Handles no managers detected gracefully" {
+            Mock -ModuleName pacwin _pw_detect_managers { return @{} }
+            Mock -ModuleName pacwin _pw_assert_managers { return $false }
+            { pacwin } | Should Not Throw
+        }
+
+        It "Handles search timeouts returning partial results" {
+            InModuleScope pacwin {
+                # Mock a task that completes and one that does not
+                $ps1 = New-Object PSObject
+                $ps1 | Add-Member -MemberType ScriptMethod -Name EndInvoke -Value { return @("Name  Id  Version", "-----------------", "git   git  2.4.0") }
+                $ps1 | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                $task1 = [PSCustomObject]@{
+                    Key = "winget"
+                    AsyncResult = [PSCustomObject]@{ IsCompleted = $true }
+                    PowerShell = $ps1
+                }
+
+                $ps2 = New-Object PSObject
+                $ps2 | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                $task2 = [PSCustomObject]@{
+                    Key = "choco"
+                    AsyncResult = [PSCustomObject]@{ IsCompleted = $false }
+                    PowerShell = $ps2
+                }
+                
+                $poolMock = New-Object PSObject
+                $poolMock | Add-Member -MemberType ScriptMethod -Name Close -Value {}
+                $poolMock | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+
+                $poolCtx = [PSCustomObject]@{
+                    Pool = $poolMock
+                    Tasks = @($task1, $task2)
+                }
+                # This simulates a partial timeout collection
+                $res = Receive-PwTaskPool -PoolContext $poolCtx
+                @($res).Count | Should Be 1
+                $res[0].Name | Should Be "git"
+            }
+        }
+
+        It "Handles empty inputs safely without throwing" {
+            { pacwin "" } | Should Not Throw
+            { pacwin -Command "" -Query "" } | Should Not Throw
+        }
+
+        It "Gracefully reports failure on HTTP 404" {
+            Mock -ModuleName pacwin Get-Module { return [PSCustomObject]@{ Path = "C:\fake\pacwin\pacwin.psm1" } }
+            Mock -ModuleName pacwin Test-Path { return $false } -ParameterFilter { $Path -like "*\.git" }
+            Mock -ModuleName pacwin Invoke-WebRequest { throw "The remote server returned an error: (404) Not Found." }
+            
+            { _pw_self_update } | Should Not Throw
+        }
+
+        It "Performs export and import roundtrip correctly" {
+            InModuleScope pacwin {
+                function winget {}
+                function choco {}
+                function scoop {}
+
+                $tempFile = Join-Path $PSScriptRoot "test-export.json"
+                try {
+                    # Mock winget, choco and scoop commands used in export with ModuleName
+                    Mock -ModuleName pacwin winget { return '{"Sources":[{"Packages":[{"PackageIdentifier":"git.git"}]}]}' }
+                    Mock -ModuleName pacwin choco { return "node|1.0" }
+                    Mock -ModuleName pacwin scoop { return '{"apps":[{"Name":"neovim"}]}' }
+                    
+                    $mgrs = @{ "winget" = "winget.exe"; "choco" = "choco.exe"; "scoop" = "scoop.exe" }
+                    
+                    _pw_do_export $mgrs $tempFile
+                    
+                    Test-Path $tempFile | Should Be $true
+                    $content = Get-Content $tempFile -Raw | ConvertFrom-Json
+                    $content.packages.Count | Should Be 3
+                    
+                    # Mock install commands
+                    Mock -ModuleName pacwin winget { }
+                    Mock -ModuleName pacwin choco { }
+                    Mock -ModuleName pacwin scoop { }
+                    
+                    { _pw_do_import $mgrs $tempFile } | Should Not Throw
+                    
+                    Assert-MockCalled winget -ModuleName pacwin -Times 2 -Exactly
+                    Assert-MockCalled choco -ModuleName pacwin -Times 2 -Exactly
+                    Assert-MockCalled scoop -ModuleName pacwin -Times 2 -Exactly
+                } finally {
+                    if (Test-Path $tempFile) { Remove-Item $tempFile -Force }
+                }
+            }
+        }
+    }
 }

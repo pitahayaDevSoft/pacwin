@@ -210,7 +210,7 @@ For a comprehensive breakdown, see the **[Wiki](docs/wiki/index.md)**.
 | **v0.4.0** | ✅ | Brand redesign (Pitahaya style) & ASCII banner. |
 | **v0.4.1** | ✅ | sfsu support, locale-independence, and PowerShell 5.1/Pester 3 compatibility. |
 | **v0.4.2** | ✅ | Streamlined flat parsers with clean early-return checks. |
-| **v0.5.1** | ✅ |  |
+| **v0.6.0** | ✅ | Command Pattern architecture, precompiled regex parsers, and full integration test suite. |
 ---
 
 ## Acknowledgments

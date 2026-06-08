@@ -2,7 +2,7 @@
 #  pacwin.psm1  -  Universal Package Layer for Windows
 #  Abstraction over: winget | chocolatey | scoop
 #  Compatible: PowerShell 5.1 + PowerShell 7+
-#  v0.4.0 (TropicalDev Industrial Rebrand)
+#  v0.6.0 (Refactoring & Concurrency Rebrand)
 # ============================================================
 
 Set-StrictMode -Version 2.0
@@ -12,6 +12,97 @@ $ErrorActionPreference = "Continue"
 if ($PSVersionTable.PSVersion.Major -lt 6)
 {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}
+
+# Resolve script root folder for dot-sourcing helper files
+$scriptDir = $PSScriptRoot
+if (-not $scriptDir) { $scriptDir = $PWD.Path }
+
+# Fallback theme in case file is missing
+$script:THEME = @{
+    Primary   = "Red"
+    Secondary = "Green"
+    Success   = "Green"
+    Warning   = "Yellow"
+    Danger    = "Red"
+    Dim       = "DarkGray"
+    Version   = "0.6.0"
+
+    Layout = @{
+        TitleWidth = 68
+        MinWidth   = 80
+        Separator  = "━" * 68
+        Spinner    = "|/-\"
+        ColWidths  = @{
+            Name    = 0.5
+            ID      = 0.3
+            Version = 0.2
+        }
+    }
+}
+
+# Load Theme configuration
+$themePath = Join-Path $scriptDir "config/themes/default.ps1"
+if (Test-Path $themePath) {
+    . $themePath
+}
+
+# Load Centralized Error Handler
+$errorHandlerPath = Join-Path $scriptDir "internal/helpers/ErrorHandler.ps1"
+if (Test-Path $errorHandlerPath) {
+    . $errorHandlerPath
+}
+
+# Load Concurrency Helper
+$concurrencyPath = Join-Path $scriptDir "internal/helpers/Concurrency.ps1"
+if (Test-Path $concurrencyPath) {
+    . $concurrencyPath
+}
+
+# Precompiled Regexes for Performance (Fase 5.1)
+$script:RegexPathValidate            = [regex]::new('^[a-zA-Z0-9\._\-@/\\:]+$', 'Compiled')
+$script:RegexWingetSkip               = [regex]::new('^\s*$|^-|^[^\x00-\x7F]|%|[\d.]+\s+[KMG]B\s*/', 'Compiled')
+$script:RegexWingetFallbackSkip       = [regex]::new('^\s*$|^-{3,}|[^\x00-\x7F]|%|[\d.]+\s+[KMG]B\s*/', 'Compiled')
+$script:RegexScoopSkip                = [regex]::new('^\s*[-=]{3,}\s*$', 'Compiled')
+$script:RegexScoopHeaderSkip          = [regex]::new('^\s*([Nn]ame\s+[Vv]ersion|[Nn]ombre\s+[Vv]ersi|^Results from)', 'Compiled')
+$script:RegexScoopObject              = [regex]::new('^@{Name=([^;]+); Version=([^;]+); Source=([^;]+)', 'Compiled')
+$script:RegexScoopParen               = [regex]::new('^\s*(\S+)\s+\(([^)]+)\)', 'Compiled')
+$script:RegexScoopColumnSkip          = [regex]::new('^[Nn]ame$|^[Ss]ource$|^[Nn]ombre$|^[Oo]rigen$', 'Compiled')
+$script:RegexScoopOutdatedSkip        = [regex]::new('^[-\s=]{3,}$', 'Compiled')
+$script:RegexScoopOutdatedHeaderSkip  = [regex]::new('^\s*([Nn]ame\s+|^Results from|[Nn]ombre\s+)', 'Compiled')
+$script:RegexScoopOutdatedArrow       = [regex]::new('^\s*(\S+)\s+\(([^)]+)\s*->\s*([^)]+)\)', 'Compiled')
+$script:RegexScoopOutdatedNew         = [regex]::new('(\S+)\s+has\s+a\s+new\s+version', 'Compiled')
+$script:RegexScoopOutdatedColon       = [regex]::new('^\s*(\S+)\s*:\s*(\S+)\s*->\s*(\S+)', 'Compiled')
+$script:RegexScoopOutdatedSfsuSkip   = [regex]::new('^[Nn]ame|^[Cc]urrent|^[Aa]vailable|^[Nn]ombre', 'Compiled')
+
+
+# Load Commands
+$commandsDir = Join-Path $scriptDir "internal/commands"
+if (Test-Path $commandsDir) {
+    Get-ChildItem $commandsDir -Filter *.ps1 | ForEach-Object {
+        . $_.FullName
+    }
+}
+
+# Setup Command Dispatch Map
+$script:CommandMap = [ordered]@{
+    "^(search|-Ss)$"        = { param($ctx) _pw_cmd_search $ctx }
+    "^(info|-Si)$"          = { param($ctx) _pw_cmd_info $ctx }
+    "^(install|-S)$"        = { param($ctx) _pw_cmd_install $ctx }
+    "^(uninstall|-R)$"      = { param($ctx) _pw_cmd_uninstall $ctx }
+    "^(update|upgrade|-Syu)$" = { param($ctx) _pw_cmd_update $ctx }
+    "^(outdated|-Qu)$"      = { param($ctx) _pw_cmd_outdated $ctx }
+    "^(list|-Q)$"           = { param($ctx) _pw_cmd_list $ctx }
+    "^(export)$"            = { param($ctx) _pw_cmd_export $ctx }
+    "^(import)$"            = { param($ctx) _pw_cmd_import $ctx }
+    "^(pin|hold)$"          = { param($ctx) _pw_cmd_pin $ctx }
+    "^(unpin|unhold)$"      = { param($ctx) _pw_cmd_unpin $ctx }
+    "^(doctor|check)$"      = { param($ctx) _pw_cmd_doctor $ctx }
+    "^(sync|dupes|dedup)$"  = { param($ctx) _pw_cmd_sync $ctx }
+    "^(status)$"            = { param($ctx) _pw_cmd_status $ctx }
+    "^(version|-V|--version|--version|-v)$" = { param($ctx) _pw_cmd_version $ctx }
+    "^(self-update)$"       = { param($ctx) _pw_cmd_self_update $ctx }
+    "^(help|--help|-h)$"    = { param($ctx) _pw_cmd_help $ctx }
 }
 
 # TROPICAL_UI :: BRAND_PITAHAYA (High-Energy industrial)
@@ -24,6 +115,21 @@ if ($PSVersionTable.PSVersion.Major -lt 6)
 
 #region -- Security & Validation -----------------------------
 
+<#
+.SYNOPSIS
+    Sanitizes user input strings for safe shell execution.
+.DESCRIPTION
+    Removes potentially dangerous shell command injection characters. 
+    Only preserves alphanumeric characters, dots, hyphens, and plus signs.
+.PARAMETER inputStr
+    The raw string input to sanitize.
+.OUTPUTS
+    System.String
+    The sanitized string, or an empty string if null or whitespace.
+.EXAMPLE
+    _pw_sanitize "google chrome; rm -rf /"
+    Returns: "googlechrome"
+#>
 function _pw_sanitize
 {
     param([string]$inputStr)
@@ -33,6 +139,21 @@ function _pw_sanitize
     return $inputStr -replace "[^\w\.\-\+]", ""
 }
 
+<#
+.SYNOPSIS
+    Validates filesystem paths against unsafe characters.
+.DESCRIPTION
+    Ensures file paths only contain safe characters to prevent directory traversal
+    or parameter injection. Allowed characters: alphanumeric, dot, underscore, hyphen,
+    at, forward/backward slashes, and colon.
+.PARAMETER pathInput
+    The raw file path input to validate.
+.OUTPUTS
+    System.String
+    The validated path string, or null if validation fails.
+.EXAMPLE
+    _pw_validate_path "C:\Users\User\app-config.json"
+#>
 function _pw_validate_path
 {
     # Validates file paths: allowed characters are \ / : . - _ a-z A-Z 0-9
@@ -40,7 +161,7 @@ function _pw_validate_path
     if (-not $pathInput)
     { return $null
     }
-    if ($pathInput -match '^[a-zA-Z0-9\._\-@/\\:]+$')
+    if ($script:RegexPathValidate.IsMatch($pathInput))
     {
         return $pathInput
     }
@@ -73,14 +194,14 @@ function _pw_header
     param($managers)
 
     _pw_color ""
-    _pw_color "      .---.      " Red -NoNewline; _pw_color "██████╗  █████╗  ██████╗██╗    ██╗██╗███╗   ██╗" Gray
-    _pw_color "     /     \     " Red -NoNewline; _pw_color "██╔══██╗██╔══██╗██╔════╝██║    ██║██║████╗  ██║" Gray
-    _pw_color "    |  ■  ■ |    " Red -NoNewline; _pw_color "██████╔╝███████║██║     ██║ █╗ ██║██║██╔██╗ ██║" Gray
-    _pw_color "    |       |    " Red -NoNewline; _pw_color "██╔═══╝ ██╔══██║██║     ██║███╗██║██║██║╚██╗██║" Gray
-    _pw_color "    'vvvvvvv'    " Red -NoNewline; _pw_color "██║     ██║  ██║╚██████╗╚███╔███╔╝██║██║ ╚████║" Gray
-    _pw_color "    '       '    " Red -NoNewline; _pw_color "╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝" Gray
+    _pw_color "      .---.      " $script:THEME.Primary -NoNewline; _pw_color "██████╗  █████╗  ██████╗██╗    ██╗██╗███╗   ██╗" $script:THEME.Dim
+    _pw_color "     /     \     " $script:THEME.Primary -NoNewline; _pw_color "██╔══██╗██╔══██╗██╔════╝██║    ██║██║████╗  ██║" $script:THEME.Dim
+    _pw_color "    |  ■  ■ |    " $script:THEME.Primary -NoNewline; _pw_color "██████╔╝███████║██║     ██║ █╗ ██║██║██╔██╗ ██║" $script:THEME.Dim
+    _pw_color "    |       |    " $script:THEME.Primary -NoNewline; _pw_color "██╔═══╝ ██╔══██║██║     ██║███╗██║██║██║╚██╗██║" $script:THEME.Dim
+    _pw_color "    'vvvvvvv'    " $script:THEME.Primary -NoNewline; _pw_color "██║     ██║  ██║╚██████╗╚███╔███╔╝██║██║ ╚████║" $script:THEME.Dim
+    _pw_color "    '       '    " $script:THEME.Primary -NoNewline; _pw_color "╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝" $script:THEME.Dim
     _pw_color ""
-    _pw_color "  [ pacwin.ps1 ] // Powered by: Tropical // BUILD: STABLE" DarkGray
+    _pw_color "  [ pacwin.ps1 ] // Powered by: Tropical // BUILD: STABLE" $script:THEME.Dim
     _pw_color ""
 
     if ($null -ne $managers)
@@ -92,22 +213,22 @@ function _pw_header
         {
             $k = $keys[$i]
             $indicator = if ($managers[$k]) { "ONLINE" } else { "OFFLINE" }
-            $color = if ($managers[$k]) { "Green" } else { "DarkGray" }
+            $color = if ($managers[$k]) { $script:THEME.Success } else { $script:THEME.Dim }
 
-            _pw_color "┌ " DarkGray -NoNewline
+            _pw_color "┌ " $script:THEME.Dim -NoNewline
             _pw_color "$($k.ToUpper())" White -NoNewline
-            _pw_color " ┐" DarkGray -NoNewline
-            _pw_color "─" DarkGray -NoNewline
-            _pw_color "[" DarkGray -NoNewline
+            _pw_color " ┐" $script:THEME.Dim -NoNewline
+            _pw_color "─" $script:THEME.Dim -NoNewline
+            _pw_color "[" $script:THEME.Dim -NoNewline
             _pw_color "$indicator" $color -NoNewline
-            _pw_color "]" DarkGray -NoNewline
+            _pw_color "]" $script:THEME.Dim -NoNewline
 
             if ($i -lt $keys.Count - 1) { _pw_color "  " -NoNewline }
         }
-        _pw_color "  //  " DarkGray -NoNewline
-        _pw_color "v0.4.0" Red -NoNewline
-        _pw_color "  //  " DarkGray -NoNewline
-        _pw_color "ENV: WINDOWS_X64" DarkGray
+        _pw_color "  //  " $script:THEME.Dim -NoNewline
+        _pw_color "v$($script:THEME.Version)" $script:THEME.Primary -NoNewline
+        _pw_color "  //  " $script:THEME.Dim -NoNewline
+        _pw_color "ENV: WINDOWS_X64" $script:THEME.Dim
     }
 
     _pw_sep
@@ -117,13 +238,23 @@ function _pw_sep
     $w = try
     { $Host.UI.RawUI.WindowSize.Width - 4
     } catch
-    { 68
+    { $script:THEME.Layout.TitleWidth
     }
     if ($w -lt 40)
-    { $w = 68
+    { $w = $script:THEME.Layout.TitleWidth
     }
-    _pw_color ("  " + ("━" * $w)) Red
+    _pw_color ("  " + ([string]$script:THEME.Layout.Separator[0] * $w)) $script:THEME.Primary
 }
+
+function _pw_last_exit_code
+{
+    if (Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue)
+    {
+        return $global:LASTEXITCODE
+    }
+    return 0
+}
+
 
 function _pw_exe
 {
@@ -134,6 +265,17 @@ function _pw_exe
     { return $cmd.Source
     }
     return $null
+}
+
+$script:BinaryCache = @{}
+function _pw_exe_cached
+{
+    param([string]$name)
+    if (-not $script:BinaryCache.ContainsKey($name))
+    {
+        $script:BinaryCache[$name] = _pw_exe $name
+    }
+    return $script:BinaryCache[$name]
 }
 
 function _pw_is_admin
@@ -149,10 +291,10 @@ function _pw_is_admin
 function _pw_detect_managers
 {
     $m = [ordered]@{}
-    $wingetExe = _pw_exe "winget"
-    $chocoExe = _pw_exe "choco"
-    $scoopExe = _pw_exe "scoop"
-    $sfsuExe = _pw_exe "sfsu"
+    $wingetExe = _pw_exe_cached "winget"
+    $chocoExe = _pw_exe_cached "choco"
+    $scoopExe = _pw_exe_cached "scoop"
+    $sfsuExe = _pw_exe_cached "sfsu"
 
     if ($wingetExe)
     { $m["winget"] = $wingetExe
@@ -201,13 +343,123 @@ function _pw_filter_manager
 
 #region -- Parsers ------------------------------------------
 
+<#
+.SYNOPSIS
+    Parses winget query and search output.
+.DESCRIPTION
+    Parses tabular winget output into structured objects. Supports three variants:
+    1. Segmented dashes: "--- ---- -----" (standard & most robust)
+    2. Single long dashes separator: "----------------"
+    3. Separator-less: Fallback whitespace-heuristic splitting
+
+    Avoids parsing column header text directly to maintain localization-safety.
+.PARAMETER lines
+    String array output captured from a winget execution.
+.OUTPUTS
+    System.Collections.Generic.List[PSCustomObject]
+    A list of objects containing Name, ID, Version, Source, and Manager properties.
+.EXAMPLE
+    $results = _pw_parse_winget_lines $wingetSearchOutput
+#>
+function _pw_find_winget_separator
+{
+    param([string[]]$lines)
+    return $lines | Where-Object { $_ -match "^-{5,}" } | Select-Object -First 1
+}
+
+function _pw_extract_offsets_from_dashes
+{
+    param([string]$separatorLine)
+    $matches = [regex]::Matches($separatorLine, "-+")
+    if ($matches.Count -lt 2) { return $null }
+
+    $nameOff    = $matches[0].Index
+    $nameLen    = $matches[0].Length
+    $idOff      = $matches[1].Index
+    $idLen      = $matches[1].Length
+    $versionOff = if ($matches.Count -ge 3) { $matches[2].Index } else { -1 }
+    $versionLen = if ($matches.Count -ge 3) { $matches[2].Length } else { -1 }
+    $sourceOff  = if ($matches.Count -ge 4) { $matches[3].Index } else { -1 }
+
+    return @{
+        nameOff    = $nameOff
+        nameLen    = $nameLen
+        idOff      = $idOff
+        idLen      = $idLen
+        versionOff = $versionOff
+        versionLen = $versionLen
+        sourceOff  = $sourceOff
+    }
+}
+
+function _pw_extract_offsets_from_header
+{
+    param([string[]]$lines, [string]$separatorLine)
+    $sepIdx = [array]::IndexOf($lines, $separatorLine)
+    if ($sepIdx -le 0) { return $null }
+
+    $headerLine = $lines[$sepIdx - 1]
+    $parts = [regex]::Matches($headerLine, "\S+")
+    if ($parts.Count -lt 2) { return $null }
+
+    $nameOff = $parts[0].Index
+    $idOff = $parts[1].Index
+    $versionOff = if ($parts.Count -ge 3) { $parts[2].Index } else { -1 }
+    $sourceOff = if ($parts.Count -ge 4) { $parts[3].Index } else { -1 }
+
+    $nameLen = $idOff - $nameOff
+    $idLen = if ($versionOff -gt 0) { $versionOff - $idOff } else { 100 }
+    $versionLen = if ($sourceOff -gt 0) { $sourceOff - $versionOff } else { 100 }
+
+    return @{
+        nameOff    = $nameOff
+        nameLen    = $nameLen
+        idOff      = $idOff
+        idLen      = $idLen
+        versionOff = $versionOff
+        versionLen = $versionLen
+        sourceOff  = $sourceOff
+    }
+}
+
+function _pw_winget_row_to_object
+{
+    param([string]$line, [hashtable]$offsets)
+
+    $name = _pw_extract_column $line $offsets.nameOff $offsets.nameLen $null
+    $id   = _pw_extract_column $line $offsets.idOff   $offsets.idLen   $null
+
+    if (-not $name -or -not $id)
+    { return $null
+    }
+
+    $versionOff = $offsets.versionOff
+    $sourceOff  = $offsets.sourceOff
+    $versionLen = $offsets.versionLen
+
+    $vLen = if ($sourceOff -gt $versionOff -and $versionOff -gt 0)
+    { $sourceOff - $versionOff
+    } else
+    { $versionLen
+    }
+    $ver  = _pw_extract_column $line $versionOff $vLen "?"
+
+    return [PSCustomObject]@{
+        Name    = $name
+        ID      = $id
+        Version = $ver
+        Source  = "winget"
+        Manager = "winget"
+    }
+}
+
 function _pw_parse_winget_lines
 {
     param([string[]]$lines)
     $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # 1. Identify the header/separator structure
-    $separatorLine = $lines | Where-Object { $_ -match "^-{5,}" } | Select-Object -First 1
+    $separatorLine = _pw_find_winget_separator $lines
 
     if (-not $separatorLine)
     {
@@ -215,135 +467,73 @@ function _pw_parse_winget_lines
         foreach ($line in $lines)
         {
             # Skip progress bars, empty lines, and header-like lines
-            if ($line -match "^\s*$|^-{3,}|[^\x00-\x7F]|%|[\d.]+\s+[KMG]B\s*/")
-            { continue
-            }
+            if ($script:RegexWingetFallbackSkip.IsMatch($line)) { continue }
             $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-            if ($parts.Count -lt 2)
-            { continue
-            }
+            if ($parts.Count -lt 2) { continue }
 
             $id = if ($parts.Count -ge 3) { $parts[1].Trim() } else { $parts[0].Trim() }
             $version = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $parts[1].Trim() }
 
             $results.Add([PSCustomObject]@{
-                    Name    = $parts[0].Trim()
-                    ID      = $id
-                    Version = $version
-                    Source  = "winget"
-                    Manager = "winget"
-                })
+                Name    = $parts[0].Trim()
+                ID      = $id
+                Version = $version
+                Source  = "winget"
+                Manager = "winget"
+            })
         }
         return $results
     }
 
-    # 2. Extract offsets from the separator line (e.g., "--- --- ---" or "------------")
-    # Matches groups of dashes to find where columns start and end
-    $matches = [regex]::Matches($separatorLine, "-+")
-
-    if ($matches.Count -ge 2)
+    # 2. Extract offsets
+    $offsets = _pw_extract_offsets_from_dashes $separatorLine
+    if (-not $offsets)
     {
-        # Segmented separator (best case)
-        $nameOff    = $matches[0].Index
-        $nameLen    = $matches[0].Length
-        $idOff      = $matches[1].Index
-        $idLen      = $matches[1].Length
-        $versionOff = if ($matches.Count -ge 3)
-        { $matches[2].Index
-        } else
-        { -1
-        }
-        $versionLen = if ($matches.Count -ge 3)
-        { $matches[2].Length
-        } else
-        { -1
-        }
-        $sourceOff  = if ($matches.Count -ge 4)
-        { $matches[3].Index
-        } else
-        { -1
-        }
-    } else
-    {
-        # Single long separator (fallback to heuristic parsing for all lines)
-        # We try to use the header line above the separator if possible
-        $sepIdx = [array]::IndexOf($lines, $separatorLine)
-        if ($sepIdx -gt 0)
-        {
-            $headerLine = $lines[$sepIdx - 1]
-            # Use gaps in the header line to guess columns
-            # This is still better than fixed English headers
-            $parts = [regex]::Matches($headerLine, "\S+")
-            if ($parts.Count -ge 2)
-            {
-                $nameOff = $parts[0].Index
-                $idOff = $parts[1].Index
-                $versionOff = if ($parts.Count -ge 3)
-                { $parts[2].Index
-                } else
-                { -1
-                }
-                $sourceOff = if ($parts.Count -ge 4)
-                { $parts[3].Index
-                } else
-                { -1
-                }
-
-                # Lengths are determined by the distance to the next column
-                $nameLen = $idOff - $nameOff
-                $idLen = if ($versionOff -gt 0)
-                { $versionOff - $idOff
-                } else
-                { 100
-                }
-                $versionLen = if ($sourceOff -gt 0)
-                { $sourceOff - $versionOff
-                } else
-                { 100
-                }
-            } else
-            { return $results
-            }
-        } else
-        { return $results
-        }
+        $offsets = _pw_extract_offsets_from_header $lines $separatorLine
     }
 
+    if (-not $offsets)
+    {
+        return $results
+    }
+
+    # 3. Parse data lines
     $dataStart = $false
     foreach ($line in $lines)
     {
         if ($line -eq $separatorLine)
-        { $dataStart = $true; continue
+        {
+            $dataStart = $true
+            continue
         }
-        if (-not $dataStart -or $line -match "^\s*$|^-|^[^\x00-\x7F]|%|[\d.]+\s+[KMG]B\s*/")
-        { continue
-        }
-
-        $name = _pw_extract_column $line $nameOff $nameLen $null
-        $id   = _pw_extract_column $line $idOff   $idLen   $null
-
-        if (-not $name -or -not $id)
-        { continue
+        if (-not $dataStart -or $script:RegexWingetSkip.IsMatch($line))
+        {
+            continue
         }
 
-        $vLen = if ($sourceOff -gt $versionOff -and $versionOff -gt 0)
-        { $sourceOff - $versionOff
-        } else
-        { $versionLen
+        $obj = _pw_winget_row_to_object $line $offsets
+        if ($obj)
+        {
+            $results.Add($obj)
         }
-        $ver  = _pw_extract_column $line $versionOff $vLen "?"
-
-        $results.Add([PSCustomObject]@{
-                Name    = $name
-                ID      = $id
-                Version = $ver
-                Source  = "winget"
-                Manager = "winget"
-            })
     }
+
     return ,$results
 }
 
+<#
+.SYNOPSIS
+    Parses Chocolatey pipe-delimited output.
+.DESCRIPTION
+    Parses Chocolatey search output when executed with `--limit-output`.
+    Expects lines in the standard pipe format 'name|version'.
+.PARAMETER lines
+    String array output captured from a choco search command.
+.OUTPUTS
+    System.Collections.Generic.List[PSCustomObject]
+.EXAMPLE
+    $results = _pw_parse_choco_lines $chocoOutput
+#>
 function _pw_parse_choco_lines
 {
     param([string[]]$lines)
@@ -365,6 +555,21 @@ function _pw_parse_choco_lines
     return ,$results
 }
 
+<#
+.SYNOPSIS
+    Parses Scoop search and list outputs.
+.DESCRIPTION
+    Parses output from Scoop search or list commands. Handles three formatting formats:
+    1. Serialization syntax: '@{Name=...; Version=...; Source=...}'
+    2. Parenthesis versioning: 'name (version) [source]' or 'name (version)'
+    3. Columnar table style: 'Name Version Source'
+.PARAMETER lines
+    String array output captured from a scoop execution.
+.OUTPUTS
+    System.Collections.Generic.List[PSCustomObject]
+.EXAMPLE
+    $results = _pw_parse_scoop_lines $scoopOutput
+#>
 function _pw_parse_scoop_lines
 {
     param([string[]]$lines)
@@ -374,34 +579,38 @@ function _pw_parse_scoop_lines
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
         # Skip headers or separators (supports multi-language)
-        if ($line -match "^\s*[-=]{3,}\s*$" -or $line -match "^\s*[Nn]ame\s+[Vv]ersion" -or $line -match "^\s*[Nn]ombre\s+[Vv]ersi" -or $line -match "^Results from")
+        if ($script:RegexScoopSkip.IsMatch($line) -or $script:RegexScoopHeaderSkip.IsMatch($line))
         {
             continue
         }
 
         # If we get a line that looks like a PSCustomObject string representation, try to handle it
-        if ($line -match "^@{Name=([^;]+); Version=([^;]+); Source=([^;]+)")
+        $mObj = $script:RegexScoopObject.Match($line)
+        if ($mObj.Success)
         {
+            $nameVal = $mObj.Groups[1].Value.Trim()
             $results.Add([PSCustomObject]@{
-                    Name = $Matches[1].Trim(); ID = $Matches[1].Trim()
-                    Version = $Matches[2].Trim(); Source = "scoop"; Manager = "scoop"
+                    Name = $nameVal; ID = $nameVal
+                    Version = $mObj.Groups[2].Value.Trim(); Source = "scoop"; Manager = "scoop"
                 })
             continue
         }
 
         # Handle 'name (version) [source]' or 'name (version)' format
-        if ($line -match "^\s*(\S+)\s+\(([^)]+)\)")
+        $mParen = $script:RegexScoopParen.Match($line)
+        if ($mParen.Success)
         {
+            $nameVal = $mParen.Groups[1].Value
             $results.Add([PSCustomObject]@{
-                    Name = $Matches[1]; ID = $Matches[1]
-                    Version = $Matches[2]; Source = "scoop"; Manager = "scoop"
+                    Name = $nameVal; ID = $nameVal
+                    Version = $mParen.Groups[2].Value; Source = "scoop"; Manager = "scoop"
                 })
             continue
         }
 
         # Handle columnar format: Name  Version  Source
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-        if ($parts.Count -eq 0 -or $parts[0] -match "^[Nn]ame$|^[Ss]ource$|^[Nn]ombre$|^[Oo]rigen$")
+        if ($parts.Count -eq 0 -or $script:RegexScoopColumnSkip.IsMatch($parts[0]))
         { continue
         }
 
@@ -418,6 +627,22 @@ function _pw_parse_scoop_lines
     return ,$results
 }
 
+<#
+.SYNOPSIS
+    Parses Scoop status or outdated app listings.
+.DESCRIPTION
+    Parses Scoop outdated results, matching four distinct output signatures:
+    1. Parenthesized arrow: 'neovim (0.9.4 -> 0.9.5)'
+    2. English notification text: 'neovim has a new version'
+    3. Colon arrow: 'neovim: 0.9.4 -> 0.9.5'
+    4. Tabular format (scoop status / sfsu outdated): 'Name Current Available'
+.PARAMETER lines
+    String array output from scoop status or sfsu outdated commands.
+.OUTPUTS
+    System.Collections.Generic.List[PSCustomObject]
+.EXAMPLE
+    $results = _pw_parse_scoop_outdated_lines $scoopStatusOutput
+#>
 function _pw_parse_scoop_outdated_lines
 {
     param([string[]]$lines)
@@ -427,16 +652,18 @@ function _pw_parse_scoop_outdated_lines
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
         # Skip headers and table separators (supports multi-language)
-        if ($line -match "^[-\s=]{3,}$" -or $line -match "^\s*[Nn]ame\s+" -or $line -match "^Results from" -or $line -match "^\s*[Nn]ombre\s+")
+        if ($script:RegexScoopOutdatedSkip.IsMatch($line) -or $script:RegexScoopOutdatedHeaderSkip.IsMatch($line))
         { continue }
 
         # Format 1: "neovim (0.9.4 -> 0.9.5)"
-        if ($line -match "^\s*(\S+)\s+\(([^)]+)\s*->\s*([^)]+)\)")
+        $mArrow = $script:RegexScoopOutdatedArrow.Match($line)
+        if ($mArrow.Success)
         {
+            $nameVal = $mArrow.Groups[1].Value
             $results.Add([PSCustomObject]@{
-                Name    = $Matches[1]
-                ID      = $Matches[1]
-                Version = $Matches[3]  # The new version
+                Name    = $nameVal
+                ID      = $nameVal
+                Version = $mArrow.Groups[3].Value  # The new version
                 Source  = "scoop"
                 Manager = "scoop"
             })
@@ -444,11 +671,13 @@ function _pw_parse_scoop_outdated_lines
         }
 
         # Format 2: "neovim has a new version" (English classic)
-        if ($line -match "(\S+)\s+has\s+a\s+new\s+version")
+        $mNew = $script:RegexScoopOutdatedNew.Match($line)
+        if ($mNew.Success)
         {
+            $nameVal = $mNew.Groups[1].Value
             $results.Add([PSCustomObject]@{
-                Name    = $Matches[1]
-                ID      = $Matches[1]
+                Name    = $nameVal
+                ID      = $nameVal
                 Version = "Later"
                 Source  = "scoop"
                 Manager = "scoop"
@@ -457,12 +686,14 @@ function _pw_parse_scoop_outdated_lines
         }
 
         # Format 3: "neovim: 0.9.4 -> 0.9.5"
-        if ($line -match "^\s*(\S+)\s*:\s*(\S+)\s*->\s*(\S+)")
+        $mColon = $script:RegexScoopOutdatedColon.Match($line)
+        if ($mColon.Success)
         {
+            $nameVal = $mColon.Groups[1].Value
             $results.Add([PSCustomObject]@{
-                Name    = $Matches[1]
-                ID      = $Matches[1]
-                Version = $Matches[3]
+                Name    = $nameVal
+                ID      = $nameVal
+                Version = $mColon.Groups[3].Value
                 Source  = "scoop"
                 Manager = "scoop"
             })
@@ -474,7 +705,7 @@ function _pw_parse_scoop_outdated_lines
         # ----      -------      ---------
         # neovim    0.9.4        0.9.5
         $parts = ($line.Trim() -split "\s{2,}").Where({ $_ -ne "" })
-        if ($parts.Count -ge 2 -and $parts[0] -notmatch "^[Nn]ame|^[Cc]urrent|^[Aa]vailable|^[Nn]ombre")
+        if ($parts.Count -ge 2 -and -not $script:RegexScoopOutdatedSfsuSkip.IsMatch($parts[0]))
         {
             $newVer = if ($parts.Count -ge 3) { $parts[2] } else { $parts[1] }
             $results.Add([PSCustomObject]@{
@@ -551,130 +782,18 @@ function _pw_get_search_scripts
     return $scripts
 }
 
-function _pw_wait_search_tasks
-{
-    param($tasks, [int]$timeoutSeconds)
-
-    $spinner = "|/-\"
-    $spinIdx = 0
-    $startTime = [DateTime]::Now
-    $timeoutMs = $timeoutSeconds * 1000
-
-    # UI Loop: Show real-time progress for each manager
-    while ($true)
-    {
-        $allFinished = $true
-        Write-Host -NoNewline "`r    "
-
-        foreach ($t in $tasks)
-        {
-            if ($t.AsyncResult.IsCompleted)
-            {
-                $t.Finished = $true
-                Write-Host -NoNewline "[" -ForegroundColor DarkGray
-                Write-Host -NoNewline "v" -ForegroundColor Green
-                Write-Host -NoNewline "] $($t.Key)  " -ForegroundColor DarkGray
-            } else
-            {
-                $allFinished = $false
-                $char = $spinner[$spinIdx % 4]
-                Write-Host -NoNewline "[" -ForegroundColor DarkGray
-                Write-Host -NoNewline "$char" -ForegroundColor Yellow
-                Write-Host -NoNewline "] $($t.Key)  " -ForegroundColor DarkGray
-            }
-        }
-
-        if ($allFinished)
-        { break
-        }
-
-        # Check timeout
-        if (([DateTime]::Now - $startTime).TotalMilliseconds -gt $timeoutMs)
-        {
-            Write-Host "" # New line
-            _pw_color "  [!] Search partially timed out ($timeoutSeconds s). Results may be incomplete." DarkGray
-            break
-        }
-
-        Start-Sleep -Milliseconds 150
-        $spinIdx++
-    }
-    Write-Host "" # End the spinner line
-}
-
-function _pw_collect_search_results
-{
-    param($tasks, $results)
-
-    foreach ($t in $tasks)
-    {
-        try
-        {
-            if ($t.AsyncResult.IsCompleted)
-            {
-                $raw = $t.PowerShell.EndInvoke($t.AsyncResult)
-                if ($null -eq $raw) { continue }
-
-                $lines = [System.Collections.Generic.List[string]]::new($raw.Count)
-                foreach ($r in $raw)
-                { $lines.Add([string]$r)
-                }
-                $parsed = @()
-                switch ($t.Key)
-                {
-                    "winget"
-                    { $parsed = _pw_parse_winget_lines $lines
-                    }
-                    "choco"
-                    { $parsed = _pw_parse_choco_lines  $lines
-                    }
-                    "scoop"
-                    { $parsed = _pw_parse_scoop_lines  $lines
-                    }
-                }
-                foreach ($r in $parsed)
-                { $results.Add($r)
-                }
-            }
-        } catch
-        {
-            Write-Debug "Error collecting results for $($t.Key): $_"
-        } finally
-        {
-            $t.PowerShell.Dispose()
-        }
-    }
-}
-
 function _pw_search_all
 {
     param($managers, [string]$query, [int]$limit = 40, [int]$timeoutSeconds = 35)
 
-    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
-
     $scripts = _pw_get_search_scripts -managers $managers
+    $poolCtx = New-PwTaskPool -Scripts $scripts -Managers $managers -Query $query
 
-    # Unified concurrency approach for all PS versions
-    # This allows us to control the UI (spinner) while waiting for background tasks
-    $rsPool = [runspacefactory]::CreateRunspacePool(1, $scripts.Count)
-    $rsPool.Open()
-    $tasks = New-Object System.Collections.Generic.List[Object]
+    Wait-PwTaskPool -PoolContext $poolCtx -TimeoutSeconds $timeoutSeconds
 
-    foreach ($key in $scripts.Keys)
-    {
-        $ps = [powershell]::Create().AddScript($scripts[$key]).AddArgument($managers[$key]).AddArgument($query)
-        $ps.RunspacePool = $rsPool
-        $tasks.Add(@{ Key = $key; PowerShell = $ps; AsyncResult = $ps.BeginInvoke(); Finished = $false })
-    }
+    $results = Receive-PwTaskPool -PoolContext $poolCtx
 
-    _pw_wait_search_tasks -tasks $tasks -timeoutSeconds $timeoutSeconds
-
-    # Collect and parse results
-    _pw_collect_search_results -tasks $tasks -results $results
-
-    $rsPool.Close()
-
-    if ($results.Count -gt $limit)
+    if ($null -ne $results -and $results.Count -gt $limit)
     { return $results | Select-Object -First $limit
     }
     return $results
@@ -839,6 +958,35 @@ function _pw_handle_update
     }
 }
 
+<#
+.SYNOPSIS
+    Universal package management layer CLI for Windows.
+.DESCRIPTION
+    Unifies package search, installation, holding, sync, and system updates
+    across winget, chocolatey, and scoop behind a clean developer terminal interface.
+.PARAMETER Command
+    The action shorthand (-S, -Ss, -R, doctor, hold, etc.) or full command.
+.PARAMETER Query
+    The package name, query term, or ID depending on the command context.
+.PARAMETER Manager
+    Filters execution to a single package manager ('winget', 'choco', 'scoop').
+.PARAMETER Limit
+    Max results to display for queries. Defaults to 40.
+.PARAMETER Timeout
+    Max duration in seconds to wait for async operations. Defaults to 35.
+.PARAMETER NoHeader
+    If set, suppresses printing the visual ASCII brand logo and status header.
+.PARAMETER NoInteractive
+    If set, executes in non-interactive scripting mode without user prompt picks.
+.PARAMETER _pw_unbound
+    Collects additional unbound parameters and processes shorthands.
+.EXAMPLE
+    pacwin search nodejs
+.EXAMPLE
+    pacwin -S neovim --manager scoop
+.EXAMPLE
+    pacwin doctor
+#>
 function pacwin
 {
     [CmdletBinding(SupportsShouldProcess)]
@@ -906,176 +1054,30 @@ function pacwin
         }
     }
 
-    switch -Regex ($Command)
-    {
-        "^(search|-Ss)$"
-        {
-            if (-not $Query)
-            { _pw_color "  [!] QUERY_MISSING: Specification required." Yellow; return
-            }
-            _pw_color "  > SCANNING_REPOS: '$Query'..." Cyan
-            $results = @(_pw_search_all $targetManagers $Query $Limit $Timeout)
-            _pw_render_results $results $Query
+    $ctx = @{
+        Command         = $Command
+        Query           = $Query
+        Manager         = $Manager
+        Limit           = $Limit
+        Timeout         = $Timeout
+        NoInteractive   = $NoInteractive
+        targetManagers  = $targetManagers
+        managers        = $managers
+    }
 
-            if (-not $NoInteractive -and $results.Count -gt 0)
-            {
-                _pw_color ""
-                _pw_color "  >> ENTRY_INDEX (ENTER TO CANCEL): " Cyan -NoNewline
-                $choice = Read-Host
-                if ([string]::IsNullOrWhiteSpace($choice))
-                { return
-                }
-                $idx = 0
-                if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt $results.Count)
-                {
-                    _pw_color "  [!] SELECTION_INVALID." Red; return
-                }
-                $pkg = $results[$idx - 1]
-                _pw_do_install $pkg
-            }
+    $executed = $false
+    foreach ($pattern in $script:CommandMap.Keys) {
+        if ($Command -match $pattern) {
+            $cmdBlock = $script:CommandMap[$pattern]
+            & $cmdBlock $ctx
+            $executed = $true
+            break
         }
+    }
 
-        "^(info|-Si)$"
-        {
-            if (-not $Query)
-            { _pw_color "  [!] Package name missing." Yellow; return
-            }
-            _pw_do_info $targetManagers $Query
-        }
-
-        "^(install|-S)$"
-        {
-            if (-not $Query)
-            { _pw_color "  [!] Package name missing." Yellow; return
-            }
-            _pw_color "  Looking for candidates for '$Query'..." Cyan
-            $results = @(_pw_search_all $targetManagers $Query $Limit $Timeout)
-
-            if ($results.Count -eq 0)
-            {
-                _pw_color "  No packages found for '$Query'." Yellow
-                return
-            }
-
-            $pkg = _pw_pick_source $results
-            if ($pkg)
-            {
-                _pw_do_install $pkg
-            }
-        }
-        "^(uninstall|-R)$"
-        {
-            if (-not $Query)
-            { _pw_color "  [!] Package name missing." Yellow; return
-            }
-            if (-not $Manager)
-            {
-                _pw_color "  [!] Specify a manager with -Manager (winget|choco|scoop)" Yellow
-                return
-            }
-            _pw_do_uninstall $Query $Manager
-        }
-
-        "^(update|upgrade|-Syu)$"
-        {
-            _pw_handle_update -targetManagers $targetManagers -Query $Query -Manager $Manager
-        }
-
-        "^(outdated|-Qu)$"
-        {
-            _pw_do_outdated $targetManagers
-        }
-
-        "^(list|-Q)$"
-        {
-            _pw_do_list $targetManagers $Query
-        }
-
-        "^(export)$"
-        {
-            _pw_do_export $targetManagers $Query
-        }
-
-        "^(import)$"
-        {
-            if (-not $Query)
-            { _pw_color "  [!] Specify the export file path." Yellow; return
-            }
-            _pw_do_import $targetManagers $Query
-        }
-
-        "^(pin|hold)$"
-        {
-            if (-not $Query)
-            {
-                _pw_do_pin_list $targetManagers
-                return
-            }
-            if (-not $Manager)
-            {
-                _pw_color "  [!] Specify a manager with -Manager (winget|choco|scoop)" Yellow
-                return
-            }
-            _pw_do_pin $Query $Manager
-        }
-
-        "^(unpin|unhold)$"
-        {
-            if (-not $Query -or -not $Manager)
-            {
-                _pw_color "  [!] Requires -Query and -Manager." Yellow; return
-            }
-            _pw_do_pin $Query $Manager -Unpin
-        }
-
-        "^(doctor|check)$"
-        {
-            _pw_do_doctor $targetManagers
-        }
-
-        "^(sync|dupes|dedup)$"
-        {
-            _pw_do_sync $targetManagers
-        }
-
-        "^(status)$"
-        {
-            _pw_color "  Binary Paths:" Cyan
-            foreach ($key in $managers.Keys)
-            {
-                _pw_color "  * $key " Gray -NoNewline
-                _pw_color "-> $($managers[$key])" DarkGray
-            }
-        }
-
-        "^(version|-V|--version)$"
-        {
-            _pw_color "  pacwin v0.4.0" Cyan
-            _pw_color "  PowerShell $($PSVersionTable.PSVersion)" Gray
-            return
-        }
-
-        "^(self-update)$"
-        {
-            _pw_self_update
-        }
-
-        "^(help|--help|-h)$"
-        {
-            _pw_show_help
-        }
-
-        "^(version|--version|-v)$"
-        {
-            _pw_color "  pacwin" White -NoNewline
-            _pw_color " v0.4.0" Gray
-        }
-
-        Default
-        {
-            _pw_color "  Unknown command '$Command'." Yellow
-            _pw_color "  Type 'pacwin help' for the full command list." Gray
-        }
+    if (-not $executed) {
+        _pw_color "  Unknown command '$Command'." Yellow
+        _pw_color "  Type 'pacwin help' for the full command list." Gray
     }
 }
 
@@ -1089,6 +1091,21 @@ $script:SRC_COLORS = @{
     "scoop"      = "Green"
 }
 
+<#
+.SYNOPSIS
+    Truncates a string to a maximum length, padding it if necessary.
+.DESCRIPTION
+    Pads the input string to the specified width if it's shorter. 
+    If it's longer, truncates it to (max - 1) characters and appends a dot.
+.PARAMETER str
+    The string to process.
+.PARAMETER max
+    The target length.
+.OUTPUTS
+    System.String
+.EXAMPLE
+    _pw_truncate "example string" 10
+#>
 function _pw_truncate
 {
     param([string]$str, [int]$max)
@@ -1101,6 +1118,25 @@ function _pw_truncate
     return ($str.Substring(0, $max - 1) + ".")
 }
 
+<#
+.SYNOPSIS
+    Extracts a substring column from a tabular line.
+.DESCRIPTION
+    Safely extracts a column of text given an offset and length, checking bounds and
+    returning a fallback value if the extracted text is empty or out of range.
+.PARAMETER line
+    The source line string.
+.PARAMETER off
+    The character offset where the column starts (0-indexed).
+.PARAMETER len
+    The maximum width of the column.
+.PARAMETER fallback
+    The value to return if the column is out of bounds or empty. Defaults to "?".
+.OUTPUTS
+    System.String
+.EXAMPLE
+    _pw_extract_column "Google Chrome  Google.Chrome" 15 13
+#>
 function _pw_extract_column
 {
     param([string]$line, [int]$off, [int]$len, [string]$fallback = "?")
@@ -1248,7 +1284,7 @@ function _pw_do_pin
             }
         }
     }
-    _pw_handle_result $mgr $LASTEXITCODE @()
+    _pw_handle_result $mgr (_pw_last_exit_code) @()
 }
 
 function _pw_do_pin_list
@@ -1420,7 +1456,7 @@ function _pw_do_import
             { scoop install $pkg.id 2>&1 | Out-Null
             }
         }
-        if ($LASTEXITCODE -ne 0)
+        if ((_pw_last_exit_code) -ne 0)
         { $failed.Add($pkg.id)
         }
     }
@@ -1480,7 +1516,7 @@ function _pw_doctor_check_managers
 {
     foreach ($mgr in @("winget","choco","scoop","sfsu"))
     {
-        $exe = _pw_exe $mgr
+        $exe = _pw_exe_cached $mgr
         if ($exe)
         {
             $ver = try
@@ -1639,7 +1675,7 @@ function _pw_self_update
         {
             Set-Location $moduleDir
             $out = git pull 2>&1
-            if ($LASTEXITCODE -eq 0)
+            if ((_pw_last_exit_code) -eq 0)
             {
                 _pw_color "  [v] Update successful via Git." Green
                 _pw_color "  $out" Gray
@@ -1793,7 +1829,7 @@ function _pw_do_install
         { $output = scoop install $pkg.ID 2>&1
         }
     }
-    _pw_handle_result $pkg.Manager $LASTEXITCODE $output
+    _pw_handle_result $pkg.Manager (_pw_last_exit_code) $output
 }
 
 function _pw_do_uninstall
@@ -1827,7 +1863,7 @@ function _pw_do_uninstall
         { $output = scoop uninstall $name 2>&1
         }
     }
-    _pw_handle_result $mgr $LASTEXITCODE $output
+    _pw_handle_result $mgr (_pw_last_exit_code) $output
 }
 
 function _pw_do_update_single
@@ -1861,7 +1897,7 @@ function _pw_do_update_single
         { $output = scoop update $id 2>&1
         }
     }
-    _pw_handle_result $mgr $LASTEXITCODE $output
+    _pw_handle_result $mgr (_pw_last_exit_code) $output
 }
 
 function _pw_do_update_all
@@ -2069,26 +2105,6 @@ function _pw_do_info
     }
 }
 
-$script:ErrorCodes = @{
-    "winget" = @{
-        "0"           = "Success"
-        "-1978335186" = "Success (Restart required to complete)"
-        "-1978335215" = "Network or Source Error (Check connectivity)"
-        "-1978334812" = "Installer failed with exit code"
-    }
-    "choco" = @{
-        "0"    = "Success"
-        "1641" = "Success (Restart required to complete)"
-        "3010" = "Success (Restart required to complete)"
-        "1603" = "Fatal error during installation (Try running as Administrator)"
-        "-1"   = "General error (Check logs)"
-    }
-    "scoop" = @{
-        "0" = "Success"
-        "1" = "Generic failure (Check bucket status or permissions)"
-    }
-}
-
 function _pw_handle_result
 {
     param(
@@ -2097,69 +2113,16 @@ function _pw_handle_result
         [string[]]$output
     )
 
-    $outputText = $output -join "`n"
-    $success = $false
-    $msg = ""
+    $result = _pw_handle_error -Manager $manager -ExitCode $exitCode -Message "" -Output $output
 
-    switch ($manager)
+    if ($result.Success)
     {
-        "winget"
-        {
-            $codeStr = [string]$exitCode
-            if ($script:ErrorCodes["winget"].Contains($codeStr))
-            {
-                $msg = $script:ErrorCodes["winget"][$codeStr]
-                if ($exitCode -eq 0 -or $exitCode -eq -1978335186)
-                { $success = $true
-                }
-            } else
-            {
-                $msg = "Winget Error (Code: $exitCode)."
-            }
-        }
-        "choco"
-        {
-            $codeStr = [string]$exitCode
-            if ($script:ErrorCodes["choco"].Contains($codeStr))
-            {
-                $msg = $script:ErrorCodes["choco"][$codeStr]
-                if ($exitCode -eq 0 -or $exitCode -eq 1641 -or $exitCode -eq 3010)
-                { $success = $true
-                }
-            } else
-            {
-                $msg = "Chocolatey Error (Code: $exitCode)."
-            }
-        }
-        "scoop"
-        {
-            if ($outputText -match "installed successfully|already installed")
-            {
-                $success = $true
-            } elseif ($outputText -match "Couldn't find manifest|Access denied")
-            {
-                $success = $false
-                $msg = "Scoop Error: " + ($output | Select-String "Error:" | Select-Object -First 1)
-            } else
-            {
-                $codeStr = [string]$exitCode
-                if ($script:ErrorCodes["scoop"].Contains($codeStr))
-                {
-                    $msg = $script:ErrorCodes["scoop"][$codeStr]
-                }
-                $success = ($exitCode -eq 0)
-            }
-        }
-    }
-
-    if ($success)
-    {
-        _pw_color "  [OK] Operation completed successfully. $msg" Green
+        _pw_color "  [OK] Operation completed successfully. $($result.Message)" Green
     } else
     {
         _pw_color "  [FAILURE] The operation could not be completed." Red
-        if ($msg)
-        { _pw_color "  Detail: $msg" Yellow
+        if ($result.Message)
+        { _pw_color "  Detail: $($result.Message)" Yellow
         } else
         { _pw_color "  Check previous output for more details." DarkGray
         }

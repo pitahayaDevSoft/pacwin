@@ -150,6 +150,21 @@ Describe "pacwin Parsers" {
                 $results.Count | Should Be 0
             }
         }
+
+        It "Handles truncated winget output gracefully" {
+            InModuleScope pacwin {
+                $lines = @(
+                    "Name               Id               Version     Source",
+                    "------------------------------------------------------",
+                    "Truncated Package  Truncated.P...   1.0.0       winget"
+                )
+                $res = _pw_parse_winget_lines $lines
+                $res.Count | Should Be 1
+                $res[0].Name | Should Be "Truncated Package"
+                $res[0].ID | Should Be "Truncated.P..."
+                $res[0].Version | Should Be "1.0.0"
+            }
+        }
     }
 
     Context "Scoop Parser (_pw_parse_scoop_lines)" {
@@ -186,6 +201,21 @@ Describe "pacwin Parsers" {
                 $results.Count | Should Be 2
                 $results[0].Name | Should Be "7zip"
                 $results[0].Version | Should Be "23.01.0"
+            }
+        }
+
+        It "Handles unicode package names in choco" {
+            InModuleScope pacwin {
+                $lines = @(
+                    "ñandú-package|1.2.3-beta",
+                    "él-app-unicode|2.0.0"
+                )
+                $res = _pw_parse_choco_lines $lines
+                $res.Count | Should Be 2
+                $res[0].Name | Should Be "ñandú-package"
+                $res[0].Version | Should Be "1.2.3-beta"
+                $res[1].Name | Should Be "él-app-unicode"
+                $res[1].Version | Should Be "2.0.0"
             }
         }
     }
@@ -260,6 +290,17 @@ Describe "pacwin Parsers" {
                 )
                 $results = _pw_parse_scoop_outdated_lines $lines
                 $results.Count | Should Be 0
+            }
+        }
+
+        It "Handles scoop bucket permission errors" {
+            InModuleScope pacwin {
+                $lines = @(
+                    "scoop: Access denied to C:\fake",
+                    "Error: Couldn't find manifest for 'fake'"
+                )
+                $res = _pw_parse_scoop_outdated_lines $lines
+                $res.Count | Should Be 0
             }
         }
     }
